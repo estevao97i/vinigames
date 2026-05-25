@@ -22,8 +22,10 @@
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const CONFIG = Object.freeze({
-  svgPath: 'assets/bird-svgrepo-com.svg',
-  audioPath: 'sounds/bird.mp3',
+  svgPathBird: 'assets/bird-svgrepo-com.svg',
+  svgPathHorse: 'assets/horse-svgrepo-com.svg',
+  audioPathBird: 'sounds/bird.mp3',
+  audioPathHorse: 'sounds/horse.mp3',
   containerId: 'bird-container',
   audioVolume: 1.0,
 });
@@ -31,7 +33,7 @@ const CONFIG = Object.freeze({
 // ── Audio Controller ──────────────────────────────────────────────────────────
 
 const AudioController = (() => {
-  const el = new Audio(CONFIG.audioPath);
+  const el = new Audio(CONFIG.audioPathBird);
   el.preload = 'auto';
   el.volume = CONFIG.audioVolume;
 
@@ -88,7 +90,7 @@ const SvgController = (() => {
     const res = await fetch(path);
     if (!res.ok) throw new Error(`SVG fetch failed (${res.status}): ${path}`);
 
-    container.innerHTML = `<img src="${CONFIG.svgPath}" alt="Bird">`;
+    container.innerHTML = `<img src="${CONFIG.svgPathBird}" alt="Bird">`;
 
     svgEl = container.querySelector('img');
     if (!svgEl) throw new Error('No <svg> element found in the fetched file.');
@@ -126,7 +128,7 @@ const SvgController = (() => {
 async function init() {
   console.log('[Bichinhos] Initializing...');
   try {
-    await SvgController.load(CONFIG.containerId, CONFIG.svgPath);
+    await SvgController.load(CONFIG.containerId, CONFIG.svgPathBird);
 
     console.log('[Bichinhos] Initialization complete. Ready for clicks!');
 
