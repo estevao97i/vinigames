@@ -24,12 +24,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 48px;
   min-height: 100vh;
 }
 
-/* ── Bird container ─────────────────────────────────────────────────────────── */
+/* ── Animal containers (shared) ─────────────────────────────────────────────── */
 
-#bird-container {
+.animal-container {
+  position: relative; /* anchor for the name badge */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -40,8 +42,30 @@ body {
   will-change: transform, filter;
 }
 
-/* Styles applied to the SVG once injected inline */
-#bird-container svg {
+/* ── Name badge ──────────────────────────────────────────────────────────────── */
+
+.animal-label {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 99px;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: #444;
+  letter-spacing: 0.02em;
+  pointer-events: none; /* não interfere no clique do SVG */
+  user-select: none;
+  z-index: 1;
+}
+
+/* Styles applied to any SVG injected inline */
+.animal-container svg {
   width: 160px;
   height: 160px;
   cursor: pointer;
@@ -52,14 +76,14 @@ body {
   -webkit-user-select: none;
 }
 
-/* ── Click pop ───────────────────────────────────────────────────────────────── */
+/* ── Click pop (applies to every animal) ────────────────────────────────────── */
 
-@keyframes bird-pop {
+@keyframes animal-pop {
   0%   { transform: scale(1);    filter: saturate(1)   brightness(1);    }
   28%  { transform: scale(1.18); filter: saturate(2.4) brightness(1.18); }
   100% { transform: scale(1);    filter: saturate(1)   brightness(1);    }
 }
 
-#bird-container.pop {
-  animation: bird-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+.animal-container.pop {
+  animation: animal-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }

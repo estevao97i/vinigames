@@ -1,154 +1,105 @@
-/**
- * Bichinhos v2 — Bird Controller
- *
- * Strategy
- * ─────────
- * The source SVG has SMIL animations that autoplay and loop
- * (begin="0s" + repeatCount="indefinite"). Before injecting the SVG
- * inline we rewrite those attributes so that:
- *
- *   • begin="0s"              → begin="indefinite"  (no autostart)
- *   • repeatCount="indefinite"→ repeatCount="1"     (play once, not forever)
- *   • fill="freeze"           → fill="remove"       (snap back to initial
- *                                                    state when done)
- *
- * On click we call beginElement() on every SMIL animation simultaneously,
- * which starts them all from frame 0 in perfect sync. Repeat clicks
- * restart everything instantly — no debounce, no lock.
- */
-
 'use strict';
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Animal factory ────────────────────────────────────────────────────────────
+//
+// Cada chamada cria uma trilha completamente isolada:
+//   • Audio object próprio → tocam em paralelo sem interferência
+//   • SVG injetado inline → pointer-events preciso (só área pintada)
+//   • Pop animation própria → cada bichinho reage independente
+//
+// Para adicionar um novo bichinho, basta chamar createAnimal({...}) no init.
 
-const CONFIG = Object.freeze({
-  svgPathBird: 'assets/bird-svgrepo-com.svg',
-  svgPathHorse: 'assets/horse-svgrepo-com.svg',
-  audioPathBird: 'sounds/bird.mp3',
-  audioPathHorse: 'sounds/horse.mp3',
-  containerId: 'bird-container',
-  audioVolume: 1.0,
-});
+async function createAnimal({ containerId, svgPath, audioPath, label = '', volume = 1.0 }) {
 
-// ── Audio Controller ──────────────────────────────────────────────────────────
+  // ── Áudio isolado ───────────────────────────────────────────────────────────
 
-const AudioController = (() => {
-  const el = new Audio(CONFIG.audioPathBird);
-  el.preload = 'auto';
-  el.volume = CONFIG.audioVolume;
+  const audio = new Audio(audioPath);
+  audio.preload = 'auto';
+  audio.volume  = volume;
 
-  /**
-   * Stop wherever it is, rewind, and play from the top.
-   * Safe to call mid-playback — each click triggers a clean restart.
-   */
-  function restart() {
-    el.pause();
-    el.currentTime = 0;
-    el.play().catch(() => {
-      // Browser may block playback without a prior user gesture.
-      // Since we're always inside a click handler this is fine.
-    });
+  function playAudio() {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
   }
 
-  return { restart };
-})();
+  // ── SVG inline ──────────────────────────────────────────────────────────────
 
-// ── SVG Controller ────────────────────────────────────────────────────────────
+  const container = document.getElementById(containerId);
+  if (!container) throw new Error(`#${containerId} not found`);
 
-const SvgController = (() => {
-  /** @type {SVGSVGElement | null} */
-  let svgEl = null;
+  const res = await fetch(svgPath);
+  if (!res.ok) throw new Error(`SVG fetch failed (${res.status}): ${svgPath}`);
 
-  /** @type {Element[]} */
-  let animEls = [];
+  container.innerHTML = await res.text();
 
-  // /**
-  //  * Rewrite animation attributes in the raw SVG text before DOM injection.
-  //  * This is the safest way to prevent autoplay — no race conditions.
-  //  *
-  //  * @param {string} text - Raw SVG source
-  //  * @returns {string}
-  //  */
-  // function preprocess(text) {
-  //   return text
-  //     .replace(/repeatCount="indefinite"/g, 'repeatCount="1"')  // no loop
-  //     .replace(/begin="0s"/g,               'begin="indefinite"') // no autostart
-  //     .replace(/fill="freeze"/g,            'fill="remove"');      // reset on end
-  // }
+  const svgEl = container.querySelector('svg');
+  if (!svgEl) throw new Error(`No <svg> found in ${svgPath}`);
 
-  /**
-   * Fetch the SVG, preprocess it, inject inline, and collect animation refs.
-   *
-   * @param {string} containerId
-   * @param {string} path
-   * @returns {Promise<SVGSVGElement>}
-   */
-  async function load(containerId, path) {
-    const container = document.getElementById(containerId);
-    if (!container) throw new Error(`Container #${containerId} not found.`);
+  svgEl.removeAttribute('width');
+  svgEl.removeAttribute('height');
+  svgEl.style.width  = '100%';
+  svgEl.style.height = '100%';
 
-    const res = await fetch(path);
-    if (!res.ok) throw new Error(`SVG fetch failed (${res.status}): ${path}`);
+  // ── Pop animation ───────────────────────────────────────────────────────────
 
-    container.innerHTML = `<img src="${CONFIG.svgPathBird}" alt="Bird">`;
-
-    svgEl = container.querySelector('img');
-    if (!svgEl) throw new Error('No <svg> element found in the fetched file.');
-
-    // Let CSS control dimensions.
-    svgEl.removeAttribute('width');
-    svgEl.removeAttribute('height');
-    svgEl.style.width = '100%';
-    svgEl.style.height = '100%';
-
-    // Collect every SMIL animation element for batch-triggering on click.
-    animEls = [
-      ...svgEl.querySelectorAll('animate, animateTransform, animateMotion, set'),
-    ];
-
-    return svgEl;
+  function triggerPop() {
+    container.classList.remove('pop');
+    void container.offsetWidth; // força reflow para reiniciar a animação CSS
+    container.classList.add('pop');
+    container.addEventListener('animationend', () => {
+      container.classList.remove('pop');
+    }, { once: true });
   }
 
-  /**
-   * Trigger all animations from frame 0 simultaneously.
-   * Calling this while already playing restarts from the top instantly.
-   */
-  function play() {
-    animEls.forEach(anim => anim.beginElement());
+  // ── Badge com nome ──────────────────────────────────────────────────────────
+
+  if (label) {
+    const badge = document.createElement('span');
+    badge.className   = 'animal-label';
+    badge.textContent = label;
+    container.appendChild(badge);
   }
 
-  /** @returns {SVGSVGElement | null} */
-  function getElement() { return svgEl; }
+  // ── Evento de clique ────────────────────────────────────────────────────────
 
-  return { load, play, getElement };
-})();
+  svgEl.addEventListener('click', () => {
+    triggerPop();
+    playAudio();
+  });
+}
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
 async function init() {
-  console.log('[Bichinhos] Initializing...');
   try {
-    await SvgController.load(CONFIG.containerId, CONFIG.svgPathBird);
-
-    console.log('[Bichinhos] Initialization complete. Ready for clicks!');
-
-    const svgEl = SvgController.getElement();
-
-    // Every click: restart animation + audio from the top — no exceptions.
-    svgEl.addEventListener('click', () => {
-      SvgController.play();
-      // restart css pop animation
-      const container = document.getElementById(CONFIG.containerId);
-
-      container.classList.remove('pop');
-
-      // força reflow pra reiniciar animação CSS
-      void container.offsetWidth;
-
-      container.classList.add('pop');
-      AudioController.restart();
-    });
-
+    // Promise.all carrega os dois em paralelo — mais rápido e independentes
+    await Promise.all([
+      createAnimal({
+        containerId: 'dog-container',
+        svgPath:     'assets/dog-svgrepo-com.svg',
+        audioPath:   'sounds/cachorro.mp3',
+        label:       'Carmen',
+      }),
+      createAnimal({
+        containerId: 'cat-container',
+        svgPath:     'assets/cat-svgrepo-com.svg',
+        audioPath:   'sounds/gato.mp3',
+        label:       'José',
+      }),
+      createAnimal({
+        containerId: 'horse-container',
+        svgPath:     'assets/horse-svgrepo-com.svg',
+        audioPath:   'sounds/cavalo.mp3',
+        label:       'Israel',
+      }),
+      createAnimal({
+        containerId: 'bird-container',
+        svgPath:     'assets/bird-svgrepo-com.svg',
+        audioPath:   'sounds/bird.mp3',
+        label:       'Sofia',
+      }),
+    ]);
   } catch (err) {
     console.error('[Bichinhos] Init error:', err);
   }
