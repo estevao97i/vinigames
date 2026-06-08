@@ -70,6 +70,66 @@ async function createAnimal({ containerId, svgPath, audioPath, label = '', volum
   });
 }
 
+// ── Auto-ajuste do grid ────────────────────────────────────────────────────────
+//
+// Calcula o maior tamanho possível para os bichinhos de forma que TODOS caibam na
+// área visível (largura × altura disponíveis abaixo do título), sem rolagem.
+// Quanto mais animais, menores eles ficam — automaticamente.
+
+const ANIMAL_MAX = 200; // teto de tamanho (px) — bichinho nunca fica gigante
+const LABEL_ROOM = 26;  // espaço reservado p/ o sticker do nome (pendura abaixo)
+
+function fitStage() {
+  const stage = document.getElementById('stage');
+  if (!stage) return;
+
+  const items = stage.querySelectorAll('.animal-container');
+  const n = items.length;
+  if (!n) return;
+
+  const cs = getComputedStyle(stage);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop)  + parseFloat(cs.paddingBottom);
+  const colGap = parseFloat(cs.columnGap) || 0;
+  const rowGap = parseFloat(cs.rowGap)    || 0;
+
+  const W = stage.clientWidth  - padX;
+  const H = stage.clientHeight - padY;
+  if (W <= 0 || H <= 0) return;
+
+  // Testa cada quantidade de colunas e escolhe a que permite o maior bichinho.
+  let best = 0;
+  let bestCols = 1;
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const sizeByW = (W - (cols - 1) * colGap) / cols;
+    const sizeByH = (H - (rows - 1) * rowGap - rows * LABEL_ROOM) / rows;
+    const size = Math.min(sizeByW, sizeByH);
+    if (size > best) {
+      best = size;
+      bestCols = cols;
+    }
+  }
+
+  best = Math.max(0, Math.min(best, ANIMAL_MAX));
+  stage.style.setProperty('--animal-size', best + 'px');
+  stage.style.gridTemplateColumns = `repeat(${bestCols}, var(--animal-size))`;
+}
+
+// Recalcula em resize/rotação (com throttle via requestAnimationFrame)
+let fitQueued = false;
+function scheduleFit() {
+  if (fitQueued) return;
+  fitQueued = true;
+  requestAnimationFrame(() => { fitQueued = false; fitStage(); });
+}
+window.addEventListener('resize', scheduleFit);
+window.addEventListener('orientationchange', scheduleFit);
+// Reavalia quando a fonte do título carrega (muda a altura do header)
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(scheduleFit);
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -112,6 +172,7 @@ async function init() {
         badgeColor:  'linear-gradient(135deg, #ffa66b 0%, #f0613c 100%)', // coral (menina)
       }),
     ]);
+    fitStage(); // dimensiona os bichinhos para caberem sem rolagem
   } catch (err) {
     console.error('[Bichinhos] Init error:', err);
   }

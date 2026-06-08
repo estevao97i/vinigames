@@ -18,14 +18,90 @@ body {
 
 body {
   background-color: #f5f0e8;
+  /* coluna: título no topo + palco preenchendo o resto, sem rolagem */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-#stage {
+/* ── Título do jogo ─────────────────────────────────────────────────────────── */
+
+#title-bar {
+  flex: 0 0 auto;          /* altura conforme o conteúdo */
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 48px;
-  min-height: 100vh;
+  /* respiro do topo da tela e ATÉ os animais (padding-bottom) */
+  padding: clamp(16px, 4vh, 40px) 16px clamp(12px, 3vh, 28px);
+}
+
+.game-title {
+  /* ↓ variáveis fáceis de manipular ↓ */
+  --title-size: clamp(34px, 11vw, 104px); /* tamanho da fonte (responsivo) */
+  --title-outline: #ffffff;               /* contorno interno (branco) */
+  --title-edge: #6b3fa0;                  /* borda externa (roxo sticker) */
+
+  margin: 0;
+  text-align: center;
+  font-family: 'Baloo 2', 'Comic Sans MS', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: var(--title-size);
+  line-height: 0.86;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  /* contorno branco grosso desenhado ATRÁS do preenchimento colorido */
+  -webkit-text-stroke: 0.16em var(--title-outline);
+  paint-order: stroke fill;
+  /* borda roxa + profundidade (sombra), imitando o adesivo */
+  filter:
+    drop-shadow( 0.03em 0    0 var(--title-edge))
+    drop-shadow(-0.03em 0    0 var(--title-edge))
+    drop-shadow( 0    0.03em 0 var(--title-edge))
+    drop-shadow( 0   -0.03em 0 var(--title-edge))
+    drop-shadow( 0 0.10em 0.06em rgba(74, 40, 110, 0.45));
+  user-select: none;
+}
+
+.game-title .line {
+  display: block;
+}
+/* a 2ª linha levemente menor, como na arte */
+.game-title .line-2 {
+  font-size: 0.92em;
+}
+
+/* Cores das letras — manipule à vontade ↓ */
+.game-title .line-1 span:nth-child(1) { color: #ff7a6b; } /* B  coral  */
+.game-title .line-1 span:nth-child(2) { color: #5fb0ef; } /* I  azul   */
+.game-title .line-1 span:nth-child(3) { color: #7fc8ec; } /* C  azul claro */
+.game-title .line-1 span:nth-child(4) { color: #6fd0c0; } /* H  verde-água */
+.game-title .line-1 span:nth-child(5) { color: #ffce4d; } /* I  amarelo */
+.game-title .line-1 span:nth-child(6) { color: #7fb0ef; } /* N  azul   */
+.game-title .line-1 span:nth-child(7) { color: #6d8be0; } /* H  azul escuro */
+.game-title .line-1 span:nth-child(8) { color: #8aa3ee; } /* O  azul   */
+.game-title .line-1 span:nth-child(9) { color: #ff8a73; } /* S  coral  */
+
+.game-title .line-2 span:nth-child(1) { color: #ff9aa6; } /* S  rosa   */
+.game-title .line-2 span:nth-child(2) { color: #6fb0ef; } /* O  azul   */
+.game-title .line-2 span:nth-child(3) { color: #7aa3e8; } /* N  azul   */
+.game-title .line-2 span:nth-child(4) { color: #ffc94d; } /* O  amarelo */
+.game-title .line-2 span:nth-child(5) { color: #ff994d; } /* R  laranja */
+.game-title .line-2 span:nth-child(6) { color: #ffd24d; } /* O  amarelo */
+.game-title .line-2 span:nth-child(7) { color: #7ad99a; } /* S  verde  */
+
+/* ── Palco / grid dos animais ───────────────────────────────────────────────── */
+
+#stage {
+  flex: 1 1 auto;          /* ocupa toda a altura restante abaixo do título */
+  min-height: 0;           /* permite encolher (sem isso o flex estoura) */
+  display: grid;
+  /* fallback antes do JS calcular; o JS define colunas e --animal-size */
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: clamp(34px, 5vh, 64px) clamp(16px, 4vw, 48px);
+  padding: clamp(8px, 2vh, 24px) clamp(20px, 5vw, 56px) clamp(28px, 4vh, 48px);
+  align-content: center;
+  justify-content: center;
+  justify-items: center;
+  overflow: hidden;        /* garante: nada de rolagem */
 }
 
 /* ── Animal containers (shared) ─────────────────────────────────────────────── */
@@ -35,8 +111,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 160px;
-  height: 160px;
+  /* tamanho definido pelo JS (encolhe p/ caber todos sem rolagem); fallback abaixo */
+  width: var(--animal-size, 100%);
+  max-width: 200px;
+  aspect-ratio: 1 / 1; /* mantém o quadrado, mas agora fluido */
   /* Pop animation runs on the container so scale + filter apply together */
   transform-origin: center;
   will-change: transform, filter;
@@ -49,12 +127,14 @@ body {
   left: 50%;
   bottom: -14px;
   transform: translateX(-50%);
-  padding: 7px 18px;
+  /* padding em em → acompanha o tamanho da fonte */
+  padding: 0.42em 1em;
   /* a cor de fundo (gradiente) vem por bichinho, definida no JS */
   border: 3px solid #ffffff;
   border-radius: 999px;
   font-family: 'Baloo 2', 'Comic Sans MS', system-ui, sans-serif;
-  font-size: 17px;
+  /* o sticker encolhe junto com o bichinho (que tem --animal-size) */
+  font-size: clamp(10px, calc(var(--animal-size, 160px) * 0.115), 17px);
   font-weight: 800;
   line-height: 1;
   color: #ffffff;
@@ -82,8 +162,8 @@ body {
 
 /* Styles applied to any SVG injected inline */
 .animal-container svg {
-  width: 160px;
-  height: 160px;
+  width: 100%;
+  height: 100%;
   cursor: pointer;
   display: block;
   /* Restrict clicks to painted areas only — no invisible hit-box */
