@@ -9,7 +9,7 @@
 //
 // Para adicionar um novo bichinho, basta chamar createAnimal({...}) no init.
 
-async function createAnimal({ containerId, svgPath, audioPath, label = '', volume = 1.0 }) {
+async function createAnimal({ containerId, svgPath, audioPath, label = '', volume = 1.0, badgeColor = '#ff7ec4' }) {
 
   // ── Áudio isolado ───────────────────────────────────────────────────────────
 
@@ -58,6 +58,7 @@ async function createAnimal({ containerId, svgPath, audioPath, label = '', volum
     const badge = document.createElement('span');
     badge.className   = 'animal-label';
     badge.textContent = label;
+    badge.style.background = badgeColor;
     container.appendChild(badge);
   }
 
@@ -80,30 +81,35 @@ async function init() {
         svgPath:     'assets/dog-svgrepo-com.svg',
         audioPath:   'sounds/cachorro.mp3',
         label:       'Carmen',
+        badgeColor:  'linear-gradient(135deg, #ff8fce 0%, #f0468f 100%)', // rosa (menina)
       }),
       createAnimal({
         containerId: 'cat-container',
         svgPath:     'assets/cat-svgrepo-com.svg',
         audioPath:   'sounds/gato.mp3',
         label:       'José',
+        badgeColor:  'linear-gradient(135deg, #5fb0ff 0%, #2f6fe6 100%)', // azul (menino)
       }),
       createAnimal({
         containerId: 'horse-container',
         svgPath:     'assets/horse-svgrepo-com.svg',
         audioPath:   'sounds/cavalo.mp3',
         label:       'Israel',
+        badgeColor:  'linear-gradient(135deg, #54d6a0 0%, #1f9d6b 100%)', // verde (menino)
       }),
       createAnimal({
         containerId: 'bird-container',
         svgPath:     'assets/bird-svgrepo-com.svg',
         audioPath:   'sounds/bird.mp3',
         label:       'Sofia',
+        badgeColor:  'linear-gradient(135deg, #c98cf0 0%, #9a4bd6 100%)', // roxo/lilás (menina)
       }),
       createAnimal({
         containerId: 'wolf-container',
         svgPath:     'assets/wolf-svgrepo-com.svg',
         audioPath:   'sounds/lobo.mp3',
         label:       'Aurora',
+        badgeColor:  'linear-gradient(135deg, #ffa66b 0%, #f0613c 100%)', // coral (menina)
       }),
     ]);
   } catch (err) {
