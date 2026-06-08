@@ -99,6 +99,12 @@ async function init() {
         audioPath:   'sounds/bird.mp3',
         label:       'Sofia',
       }),
+      createAnimal({
+        containerId: 'wolf-container',
+        svgPath:     'assets/wolf-svgrepo-com.svg',
+        audioPath:   'sounds/lobo.mp3',
+        label:       'Aurora',
+      }),
     ]);
   } catch (err) {
     console.error('[Bichinhos] Init error:', err);
