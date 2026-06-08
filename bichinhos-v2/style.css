@@ -64,6 +64,23 @@ body {
 .game-title .line {
   display: block;
 }
+
+/* Cada letra é "tocável": vira inline-block p/ poder animar e mostra cursor */
+.game-title .key {
+  display: inline-block;
+  transform-origin: center 70%;
+  will-change: transform;
+  cursor: pointer;
+}
+/* saltinho ao tocar a nota */
+.game-title .key.key-bounce {
+  animation: key-pop 0.26s ease;
+}
+@keyframes key-pop {
+  0%   { transform: translateY(0)     scale(1);    }
+  35%  { transform: translateY(-12%)  scale(1.16); }
+  100% { transform: translateY(0)     scale(1);    }
+}
 /* a 2ª linha levemente menor, como na arte */
 .game-title .line-2 {
   font-size: 0.92em;

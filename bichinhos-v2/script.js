@@ -11,16 +11,42 @@
 
 async function createAnimal({ containerId, svgPath, audioPath, label = '', volume = 1.0, badgeColor = '#ff7ec4' }) {
 
-  // ── Áudio isolado ───────────────────────────────────────────────────────────
+  // ── Áudio isolado (Web Audio → disparo instantâneo, sem delay) ───────────────
+  //
+  // O MP3 é decodificado UMA vez agora (no carregamento). No clique, criamos um
+  // AudioBufferSourceNode e damos start(0): latência ~0, sem espera de decode.
+  // Cada clique é uma voz nova → tocam em paralelo, independentes.
 
-  const audio = new Audio(audioPath);
-  audio.preload = 'auto';
-  audio.volume  = volume;
+  let audioBuffer = null;
+  let htmlFallback = null;
+
+  try {
+    const ctx = getAudioCtx();
+    const resp = await fetch(audioPath);
+    const arrayBuf = await resp.arrayBuffer();
+    audioBuffer = await ctx.decodeAudioData(arrayBuf);
+  } catch (_) {
+    // Fallback: HTMLAudio (caso decodeAudioData falhe nesse navegador)
+    htmlFallback = new Audio(audioPath);
+    htmlFallback.preload = 'auto';
+  }
 
   function playAudio() {
-    audio.pause();
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
+    const ctx = getAudioCtx();
+    if (audioBuffer && ctx) {
+      const src = ctx.createBufferSource();
+      src.buffer = audioBuffer;
+      const g = ctx.createGain();
+      g.gain.value = volume;
+      src.connect(g);
+      g.connect(ctx.destination);
+      src.start(0); // instantâneo
+      src.onended = () => { src.disconnect(); g.disconnect(); };
+    } else if (htmlFallback) {
+      const f = htmlFallback.cloneNode(); // permite sobreposição/paralelo
+      f.volume = volume;
+      f.play().catch(() => {});
+    }
   }
 
   // ── SVG inline ──────────────────────────────────────────────────────────────
@@ -68,6 +94,171 @@ async function createAnimal({ containerId, svgPath, audioPath, label = '', volum
     triggerPop();
     playAudio();
   });
+}
+
+// ── Notas do título (teclado fofinho em Dó maior) ──────────────────────────────
+//
+// Sintetizado com Web Audio API: sem arquivos, sem carregamento → performático.
+// Cada letra = uma nota da escala de Dó maior, ascendente. É MONOFÔNICO com corte
+// rápido: ao tocar uma nova nota, a anterior é silenciada em ~25ms, então os sons
+// nunca se sobrepõem.
+
+let _audioCtx = null;
+let _activeVoice = null;
+
+function getAudioCtx() {
+  if (!_audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    _audioCtx = new AC();
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+
+// Destrava o áudio no PRIMEIRO gesto do usuário (qualquer tipo), assim o som já
+// fica pronto sem precisar de um clique específico. Navegadores exigem ao menos
+// uma interação para iniciar áudio — aqui pegamos a primeira que acontecer.
+function installAudioUnlock() {
+  getAudioCtx(); // cria o contexto já no load (fica "suspended" até o gesto)
+  const events = ['pointerdown', 'pointermove', 'pointerover', 'touchstart', 'keydown', 'click', 'wheel'];
+  const unlock = () => {
+    const ctx = getAudioCtx();
+    if (ctx && ctx.state === 'running') {
+      events.forEach(ev => window.removeEventListener(ev, unlock, true));
+    }
+  };
+  events.forEach(ev => window.addEventListener(ev, unlock, true));
+}
+
+// Frequências da escala de Dó maior (C, D, E, F, G, A, B...) subindo por oitavas.
+function buildCMajorScale(count) {
+  const C4 = 261.63;
+  const degrees = [0, 2, 4, 5, 7, 9, 11]; // semitons de Dó maior
+  const freqs = [];
+  for (let i = 0; i < count; i++) {
+    const semitones = degrees[i % 7] + 12 * Math.floor(i / 7);
+    freqs.push(C4 * Math.pow(2, semitones / 12));
+  }
+  return freqs;
+}
+
+function playKeyNote(freq) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // Silencia a nota anterior (monofônico → sem sobreposição)
+  if (_activeVoice) {
+    const v = _activeVoice;
+    _activeVoice = null;
+    try {
+      v.gain.gain.cancelScheduledValues(now);
+      v.gain.gain.setValueAtTime(Math.max(v.gain.gain.value, 0.0001), now);
+      v.gain.gain.linearRampToValueAtTime(0.0001, now + 0.025);
+      v.oscs.forEach(o => { try { o.stop(now + 0.03); } catch (_) {} });
+    } catch (_) {}
+  }
+
+  // Voz nova: triângulo (corpo) + senoide uma oitava acima (brilho) + lowpass suave
+  const master = ctx.createGain();
+  master.connect(ctx.destination);
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 4200;
+  lp.Q.value = 0.7;
+  lp.connect(master);
+
+  const o1 = ctx.createOscillator();
+  o1.type = 'triangle';
+  o1.frequency.value = freq;
+  const o2 = ctx.createOscillator();
+  o2.type = 'sine';
+  o2.frequency.value = freq * 2;
+  const g2 = ctx.createGain();
+  g2.gain.value = 0.3;
+  o1.connect(lp);
+  o2.connect(g2);
+  g2.connect(lp);
+
+  // Envelope tipo "pluck" (ataque rápido, decay curto e fofinho)
+  const peak = 0.2, attack = 0.008, dur = 0.22;
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.exponentialRampToValueAtTime(peak, now + attack);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  o1.start(now);
+  o2.start(now);
+  o1.stop(now + dur + 0.02);
+  o2.stop(now + dur + 0.02);
+
+  const voice = { gain: master, oscs: [o1, o2] };
+  _activeVoice = voice;
+  o1.onended = () => {
+    o1.disconnect(); o2.disconnect(); g2.disconnect(); lp.disconnect(); master.disconnect();
+    if (_activeVoice === voice) _activeVoice = null;
+  };
+}
+
+function setupTitleSounds() {
+  const title = document.querySelector('.game-title');
+  if (!title) return;
+
+  const letters = [...title.querySelectorAll('.line > span')];
+  if (!letters.length) return;
+
+  const scale = buildCMajorScale(letters.length);
+  letters.forEach((el, i) => {
+    el.classList.add('key');
+    el.dataset.freq = scale[i].toFixed(2);
+  });
+
+  let lastEl = null;
+  const trigger = (el) => {
+    if (!el || el === lastEl || !el.dataset || !el.dataset.freq) return;
+    lastEl = el;
+    playKeyNote(parseFloat(el.dataset.freq));
+    // saltinho visual
+    el.classList.remove('key-bounce');
+    void el.offsetWidth; // reinicia a animação
+    el.classList.add('key-bounce');
+  };
+
+  // ── Mouse: pointerover dispara 1x ao entrar em cada letra (eficiente) ──
+  title.addEventListener('pointerover', (e) => {
+    if (e.pointerType === 'touch') return; // toque tratado abaixo
+    const el = e.target.closest && e.target.closest('.key');
+    if (el && title.contains(el)) trigger(el);
+  });
+  title.addEventListener('pointerout', (e) => {
+    if (e.pointerType === 'touch') return;
+    const to = e.relatedTarget;
+    if (!to || !to.closest || !to.closest('.key')) lastEl = null;
+  });
+
+  // ── Toque arrastando: elementFromPoint com throttle via rAF ──
+  let touchScheduled = false;
+  let lastTouch = null;
+  const processTouch = () => {
+    touchScheduled = false;
+    if (!lastTouch) return;
+    const el = document.elementFromPoint(lastTouch.clientX, lastTouch.clientY);
+    const letter = el && el.closest ? el.closest('.key') : null;
+    if (letter && title.contains(letter)) trigger(letter);
+    else lastEl = null;
+  };
+  const onTouch = (e) => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    lastTouch = { clientX: t.clientX, clientY: t.clientY };
+    if (touchScheduled) return;
+    touchScheduled = true;
+    requestAnimationFrame(processTouch);
+  };
+  title.addEventListener('touchstart', onTouch, { passive: true });
+  title.addEventListener('touchmove', onTouch, { passive: true });
+  title.addEventListener('touchend', () => { lastEl = null; }, { passive: true });
 }
 
 // ── Auto-ajuste do grid ────────────────────────────────────────────────────────
@@ -133,6 +324,8 @@ if (document.fonts && document.fonts.ready) {
 // ── App ───────────────────────────────────────────────────────────────────────
 
 async function init() {
+  installAudioUnlock();  // prepara/destrava o áudio o quanto antes
+  setupTitleSounds();    // ativa as notinhas do título (DOM já disponível)
   try {
     // Promise.all carrega os dois em paralelo — mais rápido e independentes
     await Promise.all([
