@@ -11,41 +11,56 @@
 
 async function createAnimal({ containerId, svgPath, audioPath, label = '', volume = 1.0, badgeColor = '#ff7ec4' }) {
 
-  // ── Áudio isolado (Web Audio → disparo instantâneo, sem delay) ───────────────
+  // ── Áudio isolado ────────────────────────────────────────────────────────────
   //
-  // O MP3 é decodificado UMA vez agora (no carregamento). No clique, criamos um
-  // AudioBufferSourceNode e damos start(0): latência ~0, sem espera de decode.
-  // Cada clique é uma voz nova → tocam em paralelo, independentes.
+  // Estratégia robusta com 2 caminhos:
+  //   • Web Audio (AudioBuffer) → disparo INSTANTÂNEO, vozes paralelas. Usado
+  //     quando o contexto já está liberado (após o 1º gesto do usuário).
+  //   • HTMLAudio (fallback) → SEMPRE disponível. Garante som no celular já no
+  //     primeiro toque, mesmo antes do Web Audio estar pronto.
 
   let audioBuffer = null;
-  let htmlFallback = null;
+  let decoding = false;
 
-  try {
+  // Baixa os bytes do MP3 em paralelo (não trava o carregamento do SVG)
+  const arrayBufPromise = fetch(audioPath)
+    .then(r => r.arrayBuffer())
+    .catch(() => null);
+
+  // Fallback sempre pronto
+  const htmlFallback = new Audio(audioPath);
+  htmlFallback.preload = 'auto';
+
+  async function ensureDecoded() {
+    if (audioBuffer || decoding) return;
     const ctx = getAudioCtx();
-    const resp = await fetch(audioPath);
-    const arrayBuf = await resp.arrayBuffer();
-    audioBuffer = await ctx.decodeAudioData(arrayBuf);
-  } catch (_) {
-    // Fallback: HTMLAudio (caso decodeAudioData falhe nesse navegador)
-    htmlFallback = new Audio(audioPath);
-    htmlFallback.preload = 'auto';
+    if (!ctx) return;
+    decoding = true;
+    try {
+      const ab = await arrayBufPromise;
+      if (ab) audioBuffer = await ctx.decodeAudioData(ab.slice(0));
+    } catch (_) {}
+    decoding = false;
   }
+  _animalDecoders.push(ensureDecoded); // será chamado no 1º gesto (unlock)
 
   function playAudio() {
-    const ctx = getAudioCtx();
-    if (audioBuffer && ctx) {
+    const ctx = _audioCtx;
+    if (ctx && ctx.state === 'running' && audioBuffer) {
+      // caminho instantâneo (Web Audio), vozes independentes/paralelas
       const src = ctx.createBufferSource();
       src.buffer = audioBuffer;
       const g = ctx.createGain();
       g.gain.value = volume;
       src.connect(g);
       g.connect(ctx.destination);
-      src.start(0); // instantâneo
+      src.start(0);
       src.onended = () => { src.disconnect(); g.disconnect(); };
-    } else if (htmlFallback) {
-      const f = htmlFallback.cloneNode(); // permite sobreposição/paralelo
-      f.volume = volume;
-      f.play().catch(() => {});
+    } else {
+      // fallback confiável (funciona no mobile dentro do gesto de clique)
+      try { htmlFallback.currentTime = 0; } catch (_) {}
+      htmlFallback.play().catch(() => {});
+      ensureDecoded(); // prepara o Web Audio p/ os próximos toques (instantâneo)
     }
   }
 
@@ -105,28 +120,35 @@ async function createAnimal({ containerId, svgPath, audioPath, label = '', volum
 
 let _audioCtx = null;
 let _activeVoice = null;
+const _animalDecoders = []; // funções que decodificam o som de cada animal
 
+// Cria o AudioContext sob demanda. NÃO resume aqui — o resume só vale dentro de
+// um gesto do usuário (exigência dos navegadores).
 function getAudioCtx() {
   if (!_audioCtx) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
-    _audioCtx = new AC();
+    try { _audioCtx = new AC(); } catch (_) { return null; }
   }
-  if (_audioCtx.state === 'suspended') _audioCtx.resume();
   return _audioCtx;
 }
 
-// Destrava o áudio no PRIMEIRO gesto do usuário (qualquer tipo), assim o som já
-// fica pronto sem precisar de um clique específico. Navegadores exigem ao menos
-// uma interação para iniciar áudio — aqui pegamos a primeira que acontecer.
+function resumeAudio() {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+
+// Destrava o áudio no PRIMEIRO gesto do usuário. Navegadores (Chrome/Safari, e
+// principalmente no celular) só permitem iniciar som após uma interação — passar
+// o mouse NÃO conta. Aqui pegamos o primeiro clique/toque/tecla em qualquer lugar
+// e liberamos tudo de uma vez.
 function installAudioUnlock() {
-  getAudioCtx(); // cria o contexto já no load (fica "suspended" até o gesto)
-  const events = ['pointerdown', 'pointermove', 'pointerover', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
+  const events = ['pointerdown', 'touchend', 'mousedown', 'keydown', 'click'];
   const unlock = () => {
     const ctx = getAudioCtx();
     if (!ctx) return;
-    // iOS/Safari: só resume() NÃO basta — é preciso tocar um buffer silencioso
-    // DENTRO do gesto do usuário para realmente liberar o Web Audio.
+    // iOS/Safari: tocar um buffer silencioso DENTRO do gesto libera o Web Audio.
     try {
       const src = ctx.createBufferSource();
       src.buffer = ctx.createBuffer(1, 1, 22050);
@@ -134,6 +156,8 @@ function installAudioUnlock() {
       src.start(0);
     } catch (_) {}
     if (ctx.state === 'suspended') ctx.resume();
+    // assim que liberar, decodifica os sons dos animais (p/ disparo instantâneo)
+    _animalDecoders.forEach(fn => fn());
     if (ctx.state === 'running') {
       events.forEach(ev => window.removeEventListener(ev, unlock, true));
     }
@@ -154,7 +178,7 @@ function buildCMajorScale(count) {
 }
 
 function playKeyNote(freq) {
-  const ctx = getAudioCtx();
+  const ctx = resumeAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
 
