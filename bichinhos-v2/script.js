@@ -11,57 +11,20 @@
 
 async function createAnimal({ containerId, svgPath, audioPath, label = '', volume = 1.0, badgeColor = '#ff7ec4' }) {
 
-  // ── Áudio isolado ────────────────────────────────────────────────────────────
+  // ── Áudio isolado (Howler.js) ────────────────────────────────────────────────
   //
-  // Estratégia robusta com 2 caminhos:
-  //   • Web Audio (AudioBuffer) → disparo INSTANTÂNEO, vozes paralelas. Usado
-  //     quando o contexto já está liberado (após o 1º gesto do usuário).
-  //   • HTMLAudio (fallback) → SEMPRE disponível. Garante som no celular já no
-  //     primeiro toque, mesmo antes do Web Audio estar pronto.
+  // A Howler cuida do desbloqueio mobile/iOS, do fallback HTML5 e da latência.
+  // Cada animal é um Howl; cada play() dispara uma voz nova → tocam em paralelo,
+  // independentes, sem sobrepor/cortar uma à outra.
 
-  let audioBuffer = null;
-  let decoding = false;
-
-  // Baixa os bytes do MP3 em paralelo (não trava o carregamento do SVG)
-  const arrayBufPromise = fetch(audioPath)
-    .then(r => r.arrayBuffer())
-    .catch(() => null);
-
-  // Fallback sempre pronto
-  const htmlFallback = new Audio(audioPath);
-  htmlFallback.preload = 'auto';
-
-  async function ensureDecoded() {
-    if (audioBuffer || decoding) return;
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    decoding = true;
-    try {
-      const ab = await arrayBufPromise;
-      if (ab) audioBuffer = await ctx.decodeAudioData(ab.slice(0));
-    } catch (_) {}
-    decoding = false;
-  }
-  _animalDecoders.push(ensureDecoded); // será chamado no 1º gesto (unlock)
+  const sound = new Howl({
+    src: [audioPath],
+    volume: volume,
+    preload: true,
+  });
 
   function playAudio() {
-    const ctx = _audioCtx;
-    if (ctx && ctx.state === 'running' && audioBuffer) {
-      // caminho instantâneo (Web Audio), vozes independentes/paralelas
-      const src = ctx.createBufferSource();
-      src.buffer = audioBuffer;
-      const g = ctx.createGain();
-      g.gain.value = volume;
-      src.connect(g);
-      g.connect(ctx.destination);
-      src.start(0);
-      src.onended = () => { src.disconnect(); g.disconnect(); };
-    } else {
-      // fallback confiável (funciona no mobile dentro do gesto de clique)
-      try { htmlFallback.currentTime = 0; } catch (_) {}
-      htmlFallback.play().catch(() => {});
-      ensureDecoded(); // prepara o Web Audio p/ os próximos toques (instantâneo)
-    }
+    sound.play();
   }
 
   // ── SVG inline ──────────────────────────────────────────────────────────────
@@ -118,51 +81,12 @@ async function createAnimal({ containerId, svgPath, audioPath, label = '', volum
 // rápido: ao tocar uma nova nota, a anterior é silenciada em ~25ms, então os sons
 // nunca se sobrepõem.
 
-let _audioCtx = null;
 let _activeVoice = null;
-const _animalDecoders = []; // funções que decodificam o som de cada animal
 
-// Cria o AudioContext sob demanda. NÃO resume aqui — o resume só vale dentro de
-// um gesto do usuário (exigência dos navegadores).
-function getAudioCtx() {
-  if (!_audioCtx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    try { _audioCtx = new AC(); } catch (_) { return null; }
-  }
-  return _audioCtx;
-}
-
-function resumeAudio() {
-  const ctx = getAudioCtx();
-  if (ctx && ctx.state === 'suspended') ctx.resume();
-  return ctx;
-}
-
-// Destrava o áudio no PRIMEIRO gesto do usuário. Navegadores (Chrome/Safari, e
-// principalmente no celular) só permitem iniciar som após uma interação — passar
-// o mouse NÃO conta. Aqui pegamos o primeiro clique/toque/tecla em qualquer lugar
-// e liberamos tudo de uma vez.
-function installAudioUnlock() {
-  const events = ['pointerdown', 'touchend', 'mousedown', 'keydown', 'click'];
-  const unlock = () => {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    // iOS/Safari: tocar um buffer silencioso DENTRO do gesto libera o Web Audio.
-    try {
-      const src = ctx.createBufferSource();
-      src.buffer = ctx.createBuffer(1, 1, 22050);
-      src.connect(ctx.destination);
-      src.start(0);
-    } catch (_) {}
-    if (ctx.state === 'suspended') ctx.resume();
-    // assim que liberar, decodifica os sons dos animais (p/ disparo instantâneo)
-    _animalDecoders.forEach(fn => fn());
-    if (ctx.state === 'running') {
-      events.forEach(ev => window.removeEventListener(ev, unlock, true));
-    }
-  };
-  events.forEach(ev => window.addEventListener(ev, unlock, true));
+// Reaproveita o MESMO AudioContext da Howler para sintetizar as notas do título.
+// Assim, o desbloqueio que a Howler faz no 1º toque também libera as notinhas.
+function audioCtx() {
+  return (typeof Howler !== 'undefined' && Howler.ctx) ? Howler.ctx : null;
 }
 
 // Frequências da escala de Dó maior (C, D, E, F, G, A, B...) subindo por oitavas.
@@ -178,8 +102,9 @@ function buildCMajorScale(count) {
 }
 
 function playKeyNote(freq) {
-  const ctx = resumeAudio();
+  const ctx = audioCtx();
   if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
   const now = ctx.currentTime;
 
   // Silencia a nota anterior (monofônico → sem sobreposição)
@@ -355,10 +280,42 @@ if (document.fonts && document.fonts.ready) {
   document.fonts.ready.then(scheduleFit);
 }
 
+// ── Tela "Toque para começar" ───────────────────────────────────────────────────
+//
+// Garante o gesto inicial exigido pelos navegadores e dá à Howler o momento certo
+// para desbloquear o áudio (inclusive no iOS/Android). Some no primeiro toque.
+
+function setupStartOverlay() {
+  const overlay = document.getElementById('start-overlay');
+  if (!overlay) return;
+
+  const start = () => {
+    // reforça o desbloqueio do áudio dentro do gesto
+    try {
+      if (typeof Howler !== 'undefined') {
+        if (Howler.ctx && Howler.ctx.state !== 'running') Howler.ctx.resume();
+        if (typeof Howler._autoResume === 'function') Howler._autoResume();
+      }
+    } catch (_) {}
+
+    // toca uma notinha de boas-vindas (confirma que o som está ativo)
+    try { playKeyNote(261.63); } catch (_) {}
+
+    overlay.classList.add('hidden');
+    overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+    // fallback caso transitionend não dispare
+    setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 600);
+  };
+
+  overlay.addEventListener('pointerdown', start, { once: true });
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 async function init() {
-  installAudioUnlock();  // prepara/destrava o áudio o quanto antes
+  // mantém o contexto sempre pronto após o 1º toque (sem auto-suspender)
+  if (typeof Howler !== 'undefined') Howler.autoSuspend = false;
+  setupStartOverlay();   // tela inicial → desbloqueia o áudio no 1º toque
   setupTitleSounds();    // ativa as notinhas do título (DOM já disponível)
   try {
     // Promise.all carrega os dois em paralelo — mais rápido e independentes

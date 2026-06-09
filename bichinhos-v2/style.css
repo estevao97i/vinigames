@@ -10,6 +10,52 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ── Tela "Toque para começar" ──────────────────────────────────────────────── */
+
+#start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #fff7ef 0%, #efe6da 100%);
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.45s ease;
+}
+#start-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.start-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 34px 40px;
+  text-align: center;
+  animation: start-bob 1.6s ease-in-out infinite;
+}
+.start-emoji {
+  font-size: clamp(48px, 14vw, 92px);
+  line-height: 1;
+}
+.start-text {
+  font-family: 'Baloo 2', 'Comic Sans MS', system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(22px, 6vw, 38px);
+  color: #ff7eb3;
+  -webkit-text-stroke: 0.12em #ffffff;
+  paint-order: stroke fill;
+  filter: drop-shadow(0 0.06em 0.05em rgba(0, 0, 0, 0.18));
+}
+@keyframes start-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 
 html,
