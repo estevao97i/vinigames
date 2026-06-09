@@ -121,10 +121,20 @@ function getAudioCtx() {
 // uma interação para iniciar áudio — aqui pegamos a primeira que acontecer.
 function installAudioUnlock() {
   getAudioCtx(); // cria o contexto já no load (fica "suspended" até o gesto)
-  const events = ['pointerdown', 'pointermove', 'pointerover', 'touchstart', 'keydown', 'click', 'wheel'];
+  const events = ['pointerdown', 'pointermove', 'pointerover', 'touchstart', 'touchend', 'keydown', 'click', 'wheel'];
   const unlock = () => {
     const ctx = getAudioCtx();
-    if (ctx && ctx.state === 'running') {
+    if (!ctx) return;
+    // iOS/Safari: só resume() NÃO basta — é preciso tocar um buffer silencioso
+    // DENTRO do gesto do usuário para realmente liberar o Web Audio.
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch (_) {}
+    if (ctx.state === 'suspended') ctx.resume();
+    if (ctx.state === 'running') {
       events.forEach(ev => window.removeEventListener(ev, unlock, true));
     }
   };

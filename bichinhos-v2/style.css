@@ -6,6 +6,8 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  /* remove o retângulo cinza de "toque" no mobile (o feedback fica só no bicho) */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
@@ -187,6 +189,9 @@ body {
   pointer-events: visiblePainted;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  outline: none;
 }
 
 /* ── Click pop (applies to every animal) ────────────────────────────────────── */
