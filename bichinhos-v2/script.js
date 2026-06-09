@@ -21,6 +21,7 @@ async function createAnimal({ containerId, svgPath, audioPath, label = '', volum
     src: [audioPath],
     volume: volume,
     preload: true,
+    html5: true, // usa <audio> (mídia) → caminho mais confiável no iOS/iPhone
   });
 
   function playAudio() {
@@ -289,6 +290,9 @@ function setupStartOverlay() {
   const overlay = document.getElementById('start-overlay');
   if (!overlay) return;
 
+  // Som de boas-vindas em HTML5 (mídia) → caminho mais confiável no iOS.
+  const welcome = new Howl({ src: ['sounds/bird.mp3'], html5: true, volume: 0.7 });
+
   const start = () => {
     // reforça o desbloqueio do áudio dentro do gesto
     try {
@@ -298,8 +302,10 @@ function setupStartOverlay() {
       }
     } catch (_) {}
 
-    // toca uma notinha de boas-vindas (confirma que o som está ativo)
-    try { playKeyNote(261.63); } catch (_) {}
+    // confirmação audível (HTML5 → toca mesmo onde o Web Audio é bloqueado)
+    try { welcome.play(); } catch (_) {}
+    // chime extra sintetizado (toca quando o aparelho NÃO está no silencioso)
+    try { playKeyNote(523.25); } catch (_) {}
 
     overlay.classList.add('hidden');
     overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
@@ -307,7 +313,8 @@ function setupStartOverlay() {
     setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 600);
   };
 
-  overlay.addEventListener('pointerdown', start, { once: true });
+  // 'click' garante que a Howler já destravou o áudio HTML5 (ocorre no touchend)
+  overlay.addEventListener('click', start, { once: true });
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
